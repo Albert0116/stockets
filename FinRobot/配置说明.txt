@@ -1,0 +1,68 @@
+FinRobot + DeepSeek 股票分析系统 - 配置说明
+==============================================
+
+【第一步：填写 DeepSeek API Key】
+-----------------------------------
+编辑文件: FinRobot/OAI_CONFIG_LIST
+
+将文件中的:
+    "api_key": "YOUR_DEEPSEEK_API_KEY"
+
+替换为您的真实 Key，例如:
+    "api_key": "sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+
+获取 Key: https://platform.deepseek.com/api_keys
+- deepseek-chat   : 通用分析，速度快、成本低（推荐日常使用）
+- deepseek-reasoner: 深度推理，分析更深入（适合复杂研报）
+
+
+【第二步：已配置的数据源】
+-----------------------------------
+Finnhub API Key : 已配置 (实时行情 + 新闻)
+yfinance        : 免费，无需 Key（历史K线数据）
+
+可选补充（不影响基本功能）:
+- FMP_API_KEY  : https://financialmodelingprep.com  (财务报表)
+- SEC_API_KEY  : https://sec-api.io                (SEC文件分析)
+
+
+【使用方式】
+-----------------------------------
+方式一（推荐）: 双击 "启动分析系统.bat"
+  - 交互式菜单，选择分析功能和股票代码
+
+方式二: 双击 "启动Jupyter教程.bat"
+  - 打开 Jupyter Lab，运行完整 Notebook 教程
+  - tutorials_beginner/agent_fingpt_forecaster.ipynb  → 股价预测
+  - tutorials_beginner/agent_annual_report.ipynb      → 年报分析
+  - tutorials_advanced/agent_trade_strategist.ipynb   → 交易策略
+
+方式三: 命令行
+  "C:\Users\lxz_y\.conda\envs\finrobot\python.exe" start_analysis.py
+
+
+【conda 环境说明】
+-----------------------------------
+环境名称 : finrobot
+Python   : 3.10
+主要包   :
+  - pyautogen  0.2.35  (多智能体框架)
+  - finrobot   (源码安装)
+  - yfinance   1.4.1
+  - finnhub-python
+  - jupyter / jupyterlab
+
+
+【常见问题】
+-----------------------------------
+Q: 运行时提示 "YOUR_DEEPSEEK_API_KEY"
+A: 按第一步填写 OAI_CONFIG_LIST 中的 Key
+
+Q: yfinance 提示 "Too Many Requests"
+A: 雅虎财经有访问频率限制，稍等几分钟重试
+
+Q: pydantic UserWarning 警告
+A: 无需处理，不影响功能，是版本兼容的提示
+
+Q: chromadb / onnxruntime 相关报错
+A: 仅影响 RAG 文档检索功能，股票行情分析不受影响

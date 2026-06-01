@@ -1,0 +1,49 @@
+# 凭据文件 - 包含真实API密钥，绝对不能提交！
+notify_config.json
+config_api_keys
+OAI_CONFIG_LIST
+
+# 数据库文件
+data/*.db
+*.db
+*.sqlite
+*.sqlite3
+
+# 前端构建产物
+dist/
+
+# 依赖
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 环境变量
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+
+# 临时文件
+nul
+tmp/
+temp/
+
+# 截图
+screenshot_*.png

@@ -1,0 +1,10 @@
+{
+    "email_from": "YOUR_EMAIL@gmail.com",
+    "email_password": "YOUR_APP_PASSWORD_HERE",
+    "email_to": "YOUR_RECEIVING_EMAIL@foxmail.com",
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_ssl": false,
+    "serverchan_key": "",
+    "bark_url": ""
+}

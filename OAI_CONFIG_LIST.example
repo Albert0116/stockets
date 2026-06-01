@@ -1,0 +1,14 @@
+[
+    {
+        "model": "deepseek-chat",
+        "api_key": "YOUR_DEEPSEEK_API_KEY_HERE",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_type": "openai"
+    },
+    {
+        "model": "deepseek-reasoner",
+        "api_key": "YOUR_DEEPSEEK_API_KEY_HERE",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_type": "openai"
+    }
+]
