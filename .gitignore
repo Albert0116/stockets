@@ -4,7 +4,7 @@ config_api_keys
 OAI_CONFIG_LIST
 
 # 数据库文件
-data/
+data/*.db
 *.db
 *.sqlite
 *.sqlite3
@@ -44,9 +44,6 @@ Thumbs.db
 nul
 tmp/
 temp/
-
-# TypeScript 构建缓存
-*.tsbuildinfo
 
 # 截图
 screenshot_*.png

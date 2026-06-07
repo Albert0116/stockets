@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { Send, MessageCircle, Loader2 } from "lucide-react"
-import { API_BASE, parseSSEStream } from "@/lib/api"
 
 interface Message {
   role: "user" | "assistant"
@@ -35,7 +34,7 @@ export default function FollowUpChat({ symbol, market, analysisContext, classNam
     setLoading(true)
 
     try {
-      const resp = await fetch(`${API_BASE}/api/chat/follow-up`, {
+      const resp = await fetch("/api/chat/follow-up", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol, market, question, context: analysisContext }),
@@ -43,22 +42,36 @@ export default function FollowUpChat({ symbol, market, analysisContext, classNam
 
       if (!resp.ok) throw new Error("请求失败")
 
+      const reader = resp.body?.getReader()
+      if (!reader) throw new Error("无法读取响应")
+
+      const decoder = new TextDecoder()
       let assistantText = ""
 
       setMessages(prev => [...prev, { role: "assistant", content: "" }])
 
-      for await (const raw of parseSSEStream(resp)) {
-        try {
-          const data = JSON.parse(raw)
-          if (data.text) {
-            assistantText += data.text
-            setMessages(prev => {
-              const updated = [...prev]
-              updated[updated.length - 1] = { role: "assistant", content: assistantText }
-              return updated
-            })
-          }
-        } catch { /* ignore */ }
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split("\n")
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue
+          const raw = line.slice(6)
+          if (raw === "[DONE]") break
+          try {
+            const data = JSON.parse(raw)
+            if (data.text) {
+              assistantText += data.text
+              setMessages(prev => {
+                const updated = [...prev]
+                updated[updated.length - 1] = { role: "assistant", content: assistantText }
+                return updated
+              })
+            }
+          } catch { /* ignore */ }
+        }
       }
     } catch (err) {
       setMessages(prev => [...prev, { role: "assistant", content: "抱歉，请求出错，请重试。" }])

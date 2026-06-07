@@ -6,10 +6,10 @@ import logging
 import time
 from typing import Dict, Any, List, Optional
 
+import akshare as ak
 from openai import OpenAI
 
 from .strategies import BUILTIN_STRATEGIES
-from .data_fetcher import fetch_a_share_market_data, fetch_us_market_data
 from db import scan_save, scan_get_latest
 
 logger = logging.getLogger(__name__)
@@ -20,26 +20,6 @@ class ScannerEngine:
 
     def __init__(self, deepseek_client: Optional[OpenAI] = None):
         self.deepseek_client = deepseek_client
-        self._cache: Dict[str, Any] = {}  # {market: [df, timestamp]}
-        self._cache_ttl: float = 120  # 缓存有效期2分钟
-
-    async def _get_market_data(self, market: str, force_refresh: bool = False):
-        """获取市场数据（按市场缓存）"""
-        now = time.time()
-        cache_entry = self._cache.get(market)
-        if (not force_refresh and cache_entry is not None
-                and (now - cache_entry[1]) < self._cache_ttl):
-            return cache_entry[0]
-
-        if market == "cn":
-            df = await fetch_a_share_market_data()
-        elif market == "us":
-            df = await fetch_us_market_data()
-        else:
-            raise ValueError(f"不支持的市场: {market}")
-
-        self._cache[market] = [df, now]
-        return df
 
     async def scan(self, strategy_name: str, use_ai: bool = False, top_n: int = 10) -> List[Dict[str, Any]]:
         """
@@ -63,13 +43,12 @@ class ScannerEngine:
         start = time.time()
 
         try:
-            df = await self._get_market_data(market)
+            if market == "cn":
+                df = await asyncio.to_thread(ak.stock_zh_a_spot_em)
+            else:
+                raise NotImplementedError("暂只支持A股扫描")
         except Exception as e:
             logger.error(f"获取市场数据失败: {e}")
-            return []
-
-        if df is None or df.empty:
-            logger.warning("市场数据为空，无候选结果")
             return []
 
         candidates_df = await asyncio.to_thread(filter_fn, df)
@@ -88,16 +67,18 @@ class ScannerEngine:
                 "market": market,
                 "price": float(row.get("最新价", 0)),
                 "change_pct": float(row.get("涨跌幅", 0)),
-                "volume": float(row.get("成交量", 0)),
+                "volume_ratio": float(row.get("量比", 0)),
+                "turnover": float(row.get("换手率", 0)),
                 "score": 0,
                 "reason": "",
             })
 
         # Phase 2: AI评估（可选，仅对top候选）
         if use_ai and self.deepseek_client and results:
-            ai_top = results[:min(5, len(results))]
+            ai_top = results[:min(5, len(results))]  # 最多5只用AI评估
             logger.info(f"AI评估 {len(ai_top)} 只候选...")
             ai_results = await self._ai_evaluate(ai_top, strategy)
+            # 合并AI评分
             ai_map = {r["symbol"]: r for r in ai_results}
             for item in results:
                 if item["symbol"] in ai_map:
@@ -119,7 +100,7 @@ class ScannerEngine:
             return candidates
 
         stocks_info = "\n".join([
-            f"- {c['symbol']} {c['name']}: 价格{c['price']}, 涨幅{c['change_pct']:.1f}%"
+            f"- {c['symbol']} {c['name']}: 价格{c['price']}, 涨幅{c['change_pct']:.1f}%, 量比{c['volume_ratio']:.1f}, 换手{c['turnover']:.1f}%"
             for c in candidates
         ])
 
@@ -159,7 +140,7 @@ class ScannerEngine:
 
     async def batch_scan(self, strategy_names: List[str], top_n: int = 10) -> Dict[str, List[Dict[str, Any]]]:
         """
-        批量执行多个策略扫描（按市场分组，每市场共享数据拉取）
+        批量执行多个策略扫描（共享一次数据拉取）
         Returns:
             {"strategy_name": [results], ...}
         """
@@ -167,48 +148,37 @@ class ScannerEngine:
         if not valid_names:
             return {}
 
-        # 按市场分组
-        market_strategies: Dict[str, List[str]] = {}
+        # 一次拉取市场数据
+        logger.info(f"批量扫描 {len(valid_names)} 个策略，拉取全市场数据...")
+        try:
+            df = await asyncio.to_thread(ak.stock_zh_a_spot_em)
+        except Exception as e:
+            logger.error(f"获取市场数据失败: {e}")
+            return {}
+
+        results = {}
         for name in valid_names:
-            mkt = BUILTIN_STRATEGIES[name].get("market", "cn")
-            market_strategies.setdefault(mkt, []).append(name)
+            strategy = BUILTIN_STRATEGIES[name]
+            filter_fn = strategy["filter_fn"]
+            candidates_df = await asyncio.to_thread(filter_fn, df)
+            strategy_results = []
+            for _, row in candidates_df.head(top_n).iterrows():
+                strategy_results.append({
+                    "symbol": str(row.get("代码", "")),
+                    "name": str(row.get("名称", "")),
+                    "market": strategy.get("market", "cn"),
+                    "price": float(row.get("最新价", 0)),
+                    "change_pct": float(row.get("涨跌幅", 0)),
+                    "volume_ratio": float(row.get("量比", 0)),
+                    "turnover": float(row.get("换手率", 0)),
+                    "score": 0,
+                    "reason": "",
+                })
+            results[name] = strategy_results
+            await scan_save(name, strategy_results)
+            logger.info(f"  策略 [{strategy['name']}]: {len(strategy_results)} 只候选")
 
-        logger.info(f"批量扫描 {len(valid_names)} 个策略，跨 {len(market_strategies)} 个市场...")
-
-        all_results: Dict[str, List[Dict[str, Any]]] = {}
-
-        for mkt, names in market_strategies.items():
-            try:
-                df = await self._get_market_data(mkt, force_refresh=True)
-            except Exception as e:
-                logger.error(f"获取{mkt}市场数据失败: {e}")
-                continue
-
-            if df is None or df.empty:
-                logger.warning(f"{mkt}市场数据为空")
-                continue
-
-            for name in names:
-                strategy = BUILTIN_STRATEGIES[name]
-                filter_fn = strategy["filter_fn"]
-                candidates_df = await asyncio.to_thread(filter_fn, df)
-                strategy_results = []
-                for _, row in candidates_df.head(top_n).iterrows():
-                    strategy_results.append({
-                        "symbol": str(row.get("代码", "")),
-                        "name": str(row.get("名称", "")),
-                        "market": mkt,
-                        "price": float(row.get("最新价", 0)),
-                        "change_pct": float(row.get("涨跌幅", 0)),
-                        "volume": float(row.get("成交量", 0)),
-                        "score": 0,
-                        "reason": "",
-                    })
-                all_results[name] = strategy_results
-                await scan_save(name, strategy_results)
-                logger.info(f"  策略 [{strategy['name']}]: {len(strategy_results)} 只候选")
-
-        return all_results
+        return results
 
     async def get_strategies(self) -> List[Dict[str, str]]:
         """获取所有可用策略"""

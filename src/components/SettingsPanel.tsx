@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react"
 import { Bell, Settings2, Save, Loader2, CheckCircle, Mail, Search, MessageCircle, Smartphone } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { API_BASE } from "@/lib/api"
 
 interface NotifyConfig {
   email_from: string
@@ -37,7 +36,7 @@ export default function SettingsPanel({ className }: SettingsPanelProps) {
 
   const loadConfig = async () => {
     try {
-      const r = await fetch(`${API_BASE}/api/settings/notify`)
+      const r = await fetch("http://localhost:8888/api/settings/notify")
       if (r.ok) {
         const data = await r.json()
         setConfig({ ...DEFAULT_CONFIG, ...data })
@@ -48,7 +47,7 @@ export default function SettingsPanel({ className }: SettingsPanelProps) {
   const autoDetectSMTP = async () => {
     if (!config.email_from.includes("@")) return
     try {
-      const r = await fetch(`${API_BASE}/api/settings/smtp-detect`, {
+      const r = await fetch("http://localhost:8888/api/settings/smtp-detect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: config.email_from }),
@@ -69,7 +68,7 @@ export default function SettingsPanel({ className }: SettingsPanelProps) {
     setSaving(true)
     setSaved(false)
     try {
-      const r = await fetch(`${API_BASE}/api/settings/notify`, {
+      const r = await fetch("http://localhost:8888/api/settings/notify", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),

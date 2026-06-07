@@ -1,20 +1,17 @@
 import { useState, useEffect, useCallback } from "react"
-import type { Market } from "@/lib/api"
+
+export type Market = "us" | "cn"
 
 export interface FavoriteStock {
   symbol: string
   name: string
   market: Market
   addedAt: number
-  group: string
 }
 
-export const FAVORITE_GROUPS = ["全部", "关注", "持仓", "观察"] as const
-export type FavoriteGroup = typeof FAVORITE_GROUPS[number]
-
-const STORAGE_KEY_V2 = "zhixi_favorites_v2"
-const STORAGE_KEY_OLD = "zhixi_favorites"
-const MAX_FAVORITES = 20
+const STORAGE_KEY_V2 = "finrobot_favorites_v2"
+const STORAGE_KEY_OLD = "finrobot_favorites"
+const MAX_FAVORITES = 12
 
 function loadFavorites(): FavoriteStock[] {
   try {
@@ -38,7 +35,6 @@ function loadFavorites(): FavoriteStock[] {
               name: f.name as string,
               market: "us" as Market,
               addedAt: typeof f.addedAt === "number" ? f.addedAt : Date.now(),
-              group: "关注",
             }))
           saveFavorites(migrated)
           // 删除旧key
@@ -50,19 +46,14 @@ function loadFavorites(): FavoriteStock[] {
     }
     const data = JSON.parse(raw)
     if (!Array.isArray(data)) return []
-    return data
-      .filter(
-        (f: unknown) =>
-          typeof f === "object" &&
-          f !== null &&
-          typeof (f as FavoriteStock).symbol === "string" &&
-          typeof (f as FavoriteStock).name === "string" &&
-          ((f as FavoriteStock).market === "us" || (f as FavoriteStock).market === "cn")
-      )
-      .map((f: FavoriteStock) => ({
-        ...f,
-        group: f.group || "关注",
-      }))
+    return data.filter(
+      (f: unknown) =>
+        typeof f === "object" &&
+        f !== null &&
+        typeof (f as FavoriteStock).symbol === "string" &&
+        typeof (f as FavoriteStock).name === "string" &&
+        ((f as FavoriteStock).market === "us" || (f as FavoriteStock).market === "cn")
+    )
   } catch {
     return []
   }
@@ -85,13 +76,13 @@ export function useFavorites() {
   }, [])
 
   const addFavorite = useCallback(
-    (symbol: string, name: string, market: Market = "us", group = "关注") => {
+    (symbol: string, name: string, market: Market = "us") => {
       setFavorites((prev) => {
         if (prev.length >= MAX_FAVORITES) return prev
-        if (prev.some((f) => f.symbol === symbol.toUpperCase() && f.market === market)) return prev
+        if (prev.some((f) => f.symbol === symbol && f.market === market)) return prev
         const next = [
           ...prev,
-          { symbol: symbol.toUpperCase(), name, market, addedAt: Date.now(), group },
+          { symbol: symbol.toUpperCase(), name, market, addedAt: Date.now() },
         ]
         saveFavorites(next)
         return next
@@ -130,25 +121,12 @@ export function useFavorites() {
     [isFavorite, addFavorite, removeFavorite]
   )
 
-  const setGroup = useCallback((symbol: string, market: Market, group: string) => {
-    setFavorites((prev) => {
-      const next = prev.map((f) =>
-        f.symbol === symbol.toUpperCase() && f.market === market
-          ? { ...f, group }
-          : f
-      )
-      saveFavorites(next)
-      return next
-    })
-  }, [])
-
   return {
     favorites,
     addFavorite,
     removeFavorite,
     isFavorite,
     toggleFavorite,
-    setGroup,
     hasFavorites: favorites.length > 0,
   }
 }

@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 智析 Design System - Dark Finance Theme */
+/* FinRobot Design System - Dark Finance Theme */
 @layer base {
   :root {
     /* === 深色金融主题 === */

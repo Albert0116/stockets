@@ -1,7 +1,6 @@
 import { useState } from "react"
-import { Loader2, Zap, Check, Play, Star, Bell } from "lucide-react"
+import { Loader2, Zap, Check, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { API_BASE } from "@/lib/api"
 
 interface ScanResult {
   symbol: string
@@ -9,7 +8,8 @@ interface ScanResult {
   market: string
   price: number
   change_pct: number
-  volume?: number
+  volume_ratio?: number
+  turnover?: number
   score: number
   reason: string
 }
@@ -25,14 +25,10 @@ interface ScannerPanelProps {
 }
 
 const STRATEGY_COLORS: Record<string, string> = {
-  volume_surge: "border-bull/30 bg-bull/5",
-  oversold_reversal: "border-gold/30 bg-gold/5",
-  steady_uptick: "border-blue-500/30 bg-blue-500/5",
-  strong_uptrend: "border-purple-500/30 bg-purple-500/5",
-  us_volume_breakout: "border-green-500/30 bg-green-500/5",
-  us_growth_value: "border-cyan-500/30 bg-cyan-500/5",
-  us_strong_momentum: "border-orange-500/30 bg-orange-500/5",
-  us_dip: "border-red-500/30 bg-red-500/5",
+  volume_breakout: "border-bull/30 bg-bull/5",
+  oversold_bounce: "border-gold/30 bg-gold/5",
+  steady_growth: "border-blue-500/30 bg-blue-500/5",
+  new_high: "border-purple-500/30 bg-purple-500/5",
 }
 
 export default function ScannerPanel({ className }: ScannerPanelProps) {
@@ -42,11 +38,10 @@ export default function ScannerPanel({ className }: ScannerPanelProps) {
   const [batchResults, setBatchResults] = useState<Record<string, ScanResult[]>>({})
   const [error, setError] = useState("")
   const [expanded, setExpanded] = useState(false)
-  const [addedSymbols, setAddedSymbols] = useState<Set<string>>(new Set())
 
   const loadStrategies = async () => {
     try {
-      const r = await fetch(`${API_BASE}/api/scanner/strategies`)
+      const r = await fetch("http://localhost:8888/api/scanner/strategies")
       const data = await r.json()
       setStrategies(data.strategies || [])
     } catch { /* ignore */ }
@@ -67,7 +62,7 @@ export default function ScannerPanel({ className }: ScannerPanelProps) {
     setError("")
     setBatchResults({})
     try {
-      const r = await fetch(`${API_BASE}/api/scanner/batch`, {
+      const r = await fetch("http://localhost:8888/api/scanner/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ strategies: Array.from(selected), top_n: 10 }),
@@ -213,51 +208,13 @@ export default function ScannerPanel({ className }: ScannerPanelProps) {
                       </div>
                     </div>
                     <div className="text-right ml-2 shrink-0">
-                      <div className="text-xs font-mono font-bold text-foreground">{r.market === "us" ? "$" : "¥"}{r.price.toFixed(2)}</div>
+                      <div className="text-xs font-mono font-bold text-foreground">¥{r.price.toFixed(2)}</div>
                       <div className={cn(
                         "text-[10px] font-mono",
                         r.change_pct >= 0 ? "text-bull" : "text-bear"
                       )}>
                         {r.change_pct >= 0 ? "+" : ""}{r.change_pct.toFixed(2)}%
                       </div>
-                    </div>
-                    {/* 快捷操作 */}
-                    <div className="flex items-center gap-0.5 ml-1.5 shrink-0">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          const key = `${r.market}-${r.symbol}`
-                          setAddedSymbols(prev => new Set(prev).add(key))
-                          window.dispatchEvent(new CustomEvent("add-to-watchlist", {
-                            detail: { symbol: r.symbol, name: r.name, market: r.market }
-                          }))
-                          setTimeout(() => setAddedSymbols(prev => {
-                            const next = new Set(prev); next.delete(key); return next
-                          }), 2000)
-                        }}
-                        className={cn(
-                          "p-1 rounded transition-colors",
-                          addedSymbols.has(`${r.market}-${r.symbol}`)
-                            ? "text-gold" : "text-muted-foreground hover:text-gold"
-                        )}
-                        title="添加到自选"
-                      >
-                        {addedSymbols.has(`${r.market}-${r.symbol}`)
-                          ? <Check className="w-3 h-3" />
-                          : <Star className="w-3 h-3" />}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          window.dispatchEvent(new CustomEvent("quick-alert", {
-                            detail: { symbol: r.symbol, market: r.market }
-                          }))
-                        }}
-                        className="p-1 rounded text-muted-foreground hover:text-primary transition-colors"
-                        title="设置预警"
-                      >
-                        <Bell className="w-3 h-3" />
-                      </button>
                     </div>
                   </div>
                 ))}

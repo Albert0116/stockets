@@ -62,9 +62,7 @@ class MultiAgentOrchestrator:
         })
 
         # 2. 并行执行前5个Agent
-        # P1-14: 每个 agent 的 chunks_list 是独立的 list 对象
-        # CPython GIL 保证 list.append() 是原子操作，多线程写入安全
-        # 轮询读取在 async 事件循环中进行，不会与线程池写入并发冲突
+        # 为每个agent创建线程安全的输出列表
         agent_chunks: Dict[str, list] = {a.agent_id: [] for a in self.agents}
         agent_done_events: Dict[str, asyncio.Event] = {a.agent_id: asyncio.Event() for a in self.agents}
         agent_errors: Dict[str, str] = {}

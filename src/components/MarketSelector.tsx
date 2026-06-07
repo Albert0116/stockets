@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils"
-import type { Market } from "@/lib/api"
+import type { Market } from "@/hooks/useMarket"
 
 interface MarketSelectorProps {
   market: Market

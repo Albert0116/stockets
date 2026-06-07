@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react"
-import type { Market } from "@/lib/api"
 
-const STORAGE_KEY = "zhixi_market"
+export type Market = "us" | "cn"
+
+const STORAGE_KEY = "finrobot_market"
 
 function loadMarket(): Market {
   try {
