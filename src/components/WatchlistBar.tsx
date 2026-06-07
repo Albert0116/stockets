@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Star, Loader2, TrendingUp, TrendingDown, X } from "lucide-react"
 import { cn, formatPct } from "@/lib/utils"
 import { fetchQuote, type QuoteData, type Market } from "@/lib/api"
 import type { FavoriteStock } from "@/hooks/useFavorites"
+import { FAVORITE_GROUPS } from "@/hooks/useFavorites"
 import SearchBar from "./SearchBar"
 
 interface WatchlistBarProps {
@@ -32,22 +33,31 @@ export default function WatchlistBar({
 }: WatchlistBarProps) {
   const [snapshots, setSnapshots] = useState<FavoriteSnapshot[]>([])
   const [showSearch, setShowSearch] = useState(false)
+  const [activeGroup, setActiveGroup] = useState<string>("全部")
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // 过滤当前市场的收藏
-  const marketFavorites = favorites.filter((f) => f.market === market)
+  // 过滤当前市场的收藏（useMemo 稳定引用，避免 useEffect 无限重建定时器）
+  const marketFavorites = useMemo(
+    () => favorites.filter((f) => f.market === market),
+    [favorites, market]
+  )
+  // 按分组过滤
+  const displayFavorites = useMemo(
+    () => activeGroup === "全部" ? marketFavorites : marketFavorites.filter(f => (f.group || "关注") === activeGroup),
+    [marketFavorites, activeGroup]
+  )
   const currency = market === "cn" ? "¥" : "$"
 
   // 启动价格轮询
   useEffect(() => {
-    if (marketFavorites.length === 0) {
+    if (displayFavorites.length === 0) {
       setSnapshots([])
       return
     }
 
     const loadAll = async () => {
       const results = await Promise.all(
-        marketFavorites.map(async (f) => {
+        displayFavorites.map(async (f) => {
           try {
             const q: QuoteData = await fetchQuote(f.symbol, f.market)
             return {
@@ -77,7 +87,7 @@ export default function WatchlistBar({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [favorites, market])
+  }, [displayFavorites, market])
 
   if (marketFavorites.length === 0 && !showSearch) return null
 
@@ -93,6 +103,21 @@ export default function WatchlistBar({
               <span className="text-[10px] text-muted-foreground mono">
                 {marketFavorites.length}
               </span>
+            </div>
+
+            {/* 分组 Tab */}
+            <div className="flex items-center gap-0.5 px-2 border-r border-border shrink-0">
+              {FAVORITE_GROUPS.map(g => (
+                <button key={g} onClick={() => setActiveGroup(g)}
+                  className={cn(
+                    "px-2 py-1 text-[10px] rounded transition-colors",
+                    activeGroup === g
+                      ? "bg-primary/15 text-primary font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-surface-2/50"
+                  )}>
+                  {g}
+                </button>
+              ))}
             </div>
 
             {/* 收藏股滚动 */}

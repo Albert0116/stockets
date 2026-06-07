@@ -1,21 +1,25 @@
-import { useState, useCallback, useEffect, useRef } from "react"
-import { Activity, Github, RefreshCw, Loader2, AlertCircle, BarChart2, TrendingUp, TrendingDown, Star } from "lucide-react"
+import { useState, useCallback, useEffect, useRef, useMemo } from "react"
+import { Activity, Github, RefreshCw, Loader2, AlertCircle, BarChart2, Star, Bell } from "lucide-react"
 import { cn, formatPct } from "@/lib/utils"
-import { fetchQuote, fetchNews, type QuoteData, type NewsItem, type Market } from "@/lib/api"
+import { API_BASE, fetchQuote, fetchNews, fetchTrending, type QuoteData, type NewsItem, type Market, type TrendingData } from "@/lib/api"
 import { useFavorites } from "@/hooks/useFavorites"
 import { useMarket } from "@/hooks/useMarket"
 import SearchBar from "@/components/SearchBar"
 import QuoteCard from "@/components/QuoteCard"
 import StockChart from "@/components/StockChart"
-import NewsFeed from "@/components/NewsFeed"
 import AnalysisTabs from "@/components/AnalysisTabs"
 import WatchlistBar from "@/components/WatchlistBar"
 import MarketSelector from "@/components/MarketSelector"
 import ScannerPanel from "@/components/ScannerPanel"
 import SettingsPanel from "@/components/SettingsPanel"
+import BacktestPanel from "@/components/BacktestPanel"
+import SentimentPanel from "@/components/SentimentPanel"
+import AlertsPanel from "@/components/AlertsPanel"
+import PortfolioPanel from "@/components/PortfolioPanel"
+import ComparePanel from "@/components/ComparePanel"
 
-const POPULAR_US = ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "GOOGL", "META", "BABA"]
-const POPULAR_CN = ["600519", "000858", "000001", "300750", "002594", "601318", "000333", "688981"]
+const FALLBACK_US = ["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "GOOGL", "META", "BABA"]
+const FALLBACK_CN = ["600519", "000858", "000001", "300750", "002594", "601318", "000333", "688981"]
 
 // 收藏股概览组件（欢迎页）
 function FavoritesOverview({
@@ -93,14 +97,24 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
+  const [showAlerts, setShowAlerts] = useState(false)
   const { market, setMarket, currency } = useMarket()
-  const { favorites, toggleFavorite, isFavorite, removeFavorite, hasFavorites } = useFavorites()
+  const { favorites, toggleFavorite, isFavorite, removeFavorite, setGroup, hasFavorites } = useFavorites()
+  // P1-10: 用 useMemo 稳定 favorites 引用，避免子组件不必要的重渲染
+  const stableFavorites = useMemo(() => favorites, [favorites])
+  const [trending, setTrending] = useState<TrendingData | null>(null)
 
-  const popular = market === "cn" ? POPULAR_CN : POPULAR_US
+  const popular = useMemo(() => {
+    if (trending && (trending.gainers.length > 0 || trending.active.length > 0)) {
+      const all = [...trending.gainers, ...trending.losers, ...trending.active]
+      return [...new Set(all.map(s => s.symbol))].slice(0, 10)
+    }
+    return market === "cn" ? FALLBACK_CN : FALLBACK_US
+  }, [trending, market])
 
   // 检测后端
   useEffect(() => {
-    fetch("http://localhost:8888/api/health")
+    fetch(`${API_BASE}/api/health`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(() => setBackendOk(true))
       .catch(() => setBackendOk(false))
@@ -128,6 +142,11 @@ export default function App() {
     }
   }, [market])
 
+  // 加载动态热门股票
+  useEffect(() => {
+    fetchTrending(market).then(setTrending).catch(() => setTrending(null))
+  }, [market])
+
   // 监听来自扫描器的选股事件（用ref避免依赖问题）
   const loadStockRef = useRef(loadStock)
   loadStockRef.current = loadStock
@@ -144,9 +163,32 @@ export default function App() {
         loadStockRef.current(detail.symbol)
       }
     }
+    // 快捷加自选
+    const addHandler = (e: Event) => {
+      const d = (e as CustomEvent).detail
+      if (d?.symbol) {
+        toggleFavorite(d.symbol, d.name || d.symbol, d.market || marketRef.current)
+      }
+    }
+    // 快捷设预警
+    const alertHandler = (e: Event) => {
+      const d = (e as CustomEvent).detail
+      if (d?.symbol) {
+        setShowAlerts(true)
+        if (d.symbol !== symbol) {
+          loadStockRef.current(d.symbol)
+        }
+      }
+    }
     window.addEventListener("select-stock", handler)
-    return () => window.removeEventListener("select-stock", handler)
-  }, [])
+    window.addEventListener("add-to-watchlist", addHandler)
+    window.addEventListener("quick-alert", alertHandler)
+    return () => {
+      window.removeEventListener("select-stock", handler)
+      window.removeEventListener("add-to-watchlist", addHandler)
+      window.removeEventListener("quick-alert", alertHandler)
+    }
+  }, [toggleFavorite, symbol])
 
   // 市场切换时重新加载当前股票
   const handleMarketChange = useCallback((m: Market) => {
@@ -183,7 +225,7 @@ export default function App() {
               <Activity className="w-4 h-4 text-primary-foreground" />
             </div>
             <span className="font-bold text-sm tracking-tight text-foreground">
-              FinRobot
+              智析
               <span className="ml-1.5 text-xs font-normal text-muted-foreground mono">DeepSeek</span>
             </span>
           </div>
@@ -198,12 +240,23 @@ export default function App() {
 
           {/* Actions */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* 刷新按钮 */}
             {symbol && (
               <button onClick={handleRefresh} disabled={loading}
                 className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors">
                 <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
               </button>
             )}
+            {/* 预警铃铛 */}
+            <button onClick={() => setShowAlerts(v => !v)}
+              className={cn(
+                "relative p-2 rounded-lg transition-colors",
+                showAlerts
+                  ? "text-primary bg-primary/10"
+                  : "text-muted-foreground hover:text-foreground hover:bg-surface-2"
+              )}>
+              <Bell className="w-4 h-4" />
+            </button>
             {/* 后端状态指示 */}
             <div className={cn(
               "flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full",
@@ -253,12 +306,12 @@ export default function App() {
           <div className="animate-fade-up">
             {/* Hero */}
             <div className="relative rounded-2xl overflow-hidden mb-8 border border-border">
-              <img src="/images/hero.png" alt="FinRobot AI 股票分析" loading="eager"
+              <img src="/images/hero.png" alt="智析 AI 股票分析" loading="eager"
                 className="w-full h-52 object-cover opacity-60" />
               <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
               <div className="absolute bottom-0 left-0 right-0 p-6">
                 <h1 className="text-2xl font-bold text-foreground mb-1">
-                  FinRobot AI 股票分析系统
+                  智析 AI 股票分析系统
                 </h1>
                 <p className="text-sm text-muted-foreground">
                   由 DeepSeek 大模型驱动 · {market === "cn" ? "AKShare" : "Finnhub"} 实时行情 · Multi-Agent 深度分析
@@ -267,13 +320,36 @@ export default function App() {
             </div>
 
             {/* 收藏概览 */}
-            <FavoritesOverview favorites={favorites} onSelect={loadStock} market={market} />
+            <FavoritesOverview favorites={stableFavorites} onSelect={loadStock} market={market} />
 
             {/* 热门入口 */}
             <div>
               <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wider font-medium">
                 热门{market === "cn" ? "A股" : "股票"}
               </p>
+              {/* 分类标签 */}
+              {trending && (trending.gainers.length > 0 || trending.losers.length > 0) && (
+                <div className="flex gap-3 mb-2">
+                  {trending.gainers.length > 0 && (
+                    <div className="text-[10px]">
+                      <span className="text-bull font-medium">▲ 涨幅榜</span>
+                      {trending.gainers.slice(0, 3).map(s => (
+                        <button key={s.symbol} onClick={() => loadStock(s.symbol)}
+                          className="ml-1 mono text-muted-foreground hover:text-foreground">{s.symbol}</button>
+                      ))}
+                    </div>
+                  )}
+                  {trending.losers.length > 0 && (
+                    <div className="text-[10px]">
+                      <span className="text-bear font-medium">▼ 跌幅榜</span>
+                      {trending.losers.slice(0, 3).map(s => (
+                        <button key={s.symbol} onClick={() => loadStock(s.symbol)}
+                          className="ml-1 mono text-muted-foreground hover:text-foreground">{s.symbol}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
                 {popular.map(s => (
                   <button key={s} onClick={() => loadStock(s)}
@@ -292,6 +368,12 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
               <ScannerPanel />
               <SettingsPanel />
+            </div>
+
+            {/* 持仓跟踪 + 多股对比 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <PortfolioPanel market={market} />
+              <ComparePanel market={market} />
             </div>
           </div>
         )}
@@ -331,11 +413,23 @@ export default function App() {
               </div>
             </div>
 
-            {/* AI分析 (标签切换: 多Agent + 单模型) */}
+            {/* AI分析 (Multi-Agent) */}
             <AnalysisTabs quote={quote} market={market} />
 
-            {/* 新闻 (全宽) */}
-            <NewsFeed news={news} />
+            {/* 舆情分析(含新闻) + 策略回测 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <SentimentPanel symbol={quote.symbol} market={market} news={news} />
+              <BacktestPanel symbol={quote.symbol} market={market} />
+            </div>
+
+            {/* 预警管理（展开时） */}
+            {showAlerts && (
+              <AlertsPanel
+                symbol={quote.symbol}
+                market={market}
+                onClose={() => setShowAlerts(false)}
+              />
+            )}
           </div>
         )}
       </main>
@@ -345,12 +439,12 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             <BarChart2 className="w-3.5 h-3.5" />
-            <span>FinRobot · DeepSeek · {market === "cn" ? "AKShare" : "Finnhub"}</span>
+            <span>智析 · DeepSeek · {market === "cn" ? "AKShare" : "Finnhub"}</span>
           </div>
           <a href="https://github.com/AI4Finance-Foundation/FinRobot" target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-1 hover:text-foreground transition-colors">
             <Github className="w-3.5 h-3.5" />
-            AI4Finance-Foundation
+            开源项目
           </a>
         </div>
       </footer>

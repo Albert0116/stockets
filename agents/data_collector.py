@@ -10,6 +10,66 @@ from typing import Dict, Any
 from .technical import compute_all_indicators
 
 
+def _add_sentiment_pre_analysis(data: Dict[str, Any]) -> Dict[str, Any]:
+    """使用关键词情绪分析为新闻打分，作为 Agent 的预判数据"""
+    news = data.get("news", [])
+    if not news:
+        data["sentiment_pre_analysis"] = {}
+        return data
+
+    try:
+        from sentiment.analyzer import SentimentAnalyzer
+        from sentiment.sources import NewsArticle
+
+        # 将 dict 新闻列表转为 NewsArticle 对象
+        articles = []
+        for n in news:
+            article = NewsArticle(
+                title=n.get("headline", ""),
+                summary=n.get("summary", ""),
+                source=n.get("source", ""),
+            )
+            articles.append(article)
+
+        analyzer = SentimentAnalyzer()
+        articles = analyzer.analyze_articles(articles)
+        aggregate = analyzer.aggregate_sentiment(articles)
+
+        # 注入 sentiment_score 回原始 news 列表
+        for i, n in enumerate(news):
+            if i < len(articles):
+                n["sentiment_score"] = articles[i].sentiment_score
+
+        data["sentiment_pre_analysis"] = {
+            "score": aggregate["score"],
+            "label": aggregate["label"],
+            "positive_ratio": aggregate["positive_ratio"],
+            "negative_ratio": aggregate["negative_ratio"],
+            "total_articles": aggregate["total_articles"],
+            "summary": _build_sentiment_summary(data["symbol"], aggregate),
+        }
+    except Exception:
+        data["sentiment_pre_analysis"] = {}
+
+    return data
+
+
+def _build_sentiment_summary(symbol: str, aggregate: Dict[str, Any]) -> str:
+    """生成一句话情绪摘要"""
+    score = aggregate.get("score", 0)
+    total = aggregate.get("total_articles", 0)
+    if total == 0:
+        return "暂无新闻"
+    if score > 0.3:
+        return f"整体偏正面 ({score:+.2f})，共{total}条"
+    elif score > 0.05:
+        return f"整体偏中性 ({score:+.2f})，共{total}条"
+    elif score > -0.3:
+        return f"整体偏负面 ({score:+.2f})，共{total}条"
+    else:
+        return f"整体偏负面 ({score:+.2f})，共{total}条"
+
+
 def collect_stock_data(symbol: str, finnhub_client, market: str = "us", **kwargs) -> Dict[str, Any]:
     """
     收集股票的所有可用数据
@@ -20,8 +80,8 @@ def collect_stock_data(symbol: str, finnhub_client, market: str = "us", **kwargs
     Returns: StockData dict with all collected info
     """
     if market == "cn":
-        return _collect_a_share_data(symbol)
-    return _collect_us_data(symbol, finnhub_client)
+        return _add_sentiment_pre_analysis(_collect_a_share_data(symbol))
+    return _add_sentiment_pre_analysis(_collect_us_data(symbol, finnhub_client))
 
 
 def _collect_us_data(symbol: str, finnhub_client) -> Dict[str, Any]:

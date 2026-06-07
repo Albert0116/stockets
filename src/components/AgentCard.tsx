@@ -36,10 +36,10 @@ export default function AgentCard({
   const [expanded, setExpanded] = useState(status === "running")
   const [elapsed, setElapsed] = useState(0)
 
-  // Auto-expand when running
-  if (status === "running" && !expanded) {
-    setExpanded(true)
-  }
+  // P0-7: Auto-expand when running - 使用 useEffect 避免 render 中直接 setState
+  useEffect(() => {
+    if (status === "running") setExpanded(true)
+  }, [status])
 
   // 计时器
   useEffect(() => {
