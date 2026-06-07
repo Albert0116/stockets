@@ -83,6 +83,84 @@ def compute_bollinger(closes: List[float], period: int = 20, std_mult: float = 2
     }
 
 
+# ─── 序列版函数（供图表叠加使用）───────────────────────
+
+def compute_rsi_series(closes: List[float], period: int = 14) -> List[float]:
+    """计算 RSI 完整序列"""
+    result: List[float] = [None] * period  # type: ignore
+    if len(closes) < period + 1:
+        return result
+    gains = []
+    losses = []
+    for i in range(1, len(closes)):
+        diff = closes[i] - closes[i - 1]
+        gains.append(max(0, diff))
+        losses.append(max(0, -diff))
+    # Wilder smoothing
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    if avg_loss == 0:
+        result.append(100.0)
+    else:
+        rs = avg_gain / avg_loss
+        result.append(round(100 - 100 / (1 + rs), 2))
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        if avg_loss == 0:
+            result.append(100.0)
+        else:
+            rs = avg_gain / avg_loss
+            result.append(round(100 - 100 / (1 + rs), 2))
+    return result
+
+
+def compute_macd_series(closes: List[float], fast: int = 12, slow: int = 26, signal: int = 9):
+    """计算 MACD 完整序列 → (macd_line, signal_line, histogram)"""
+    if len(closes) < slow + signal:
+        n = len(closes)
+        return [None] * n, [None] * n, [None] * n
+
+    def ema(data, p):
+        m = 2 / (p + 1)
+        r = [data[0]]
+        for i in range(1, len(data)):
+            r.append((data[i] - r[-1]) * m + r[-1])
+        return r
+
+    ema_fast = ema(closes, fast)
+    ema_slow = ema(closes, slow)
+    macd_line_full = [f - s for f, s in zip(ema_fast, ema_slow)]
+    # signal line starts after slow-1
+    signal_part = ema(macd_line_full[slow - 1:], signal)
+    # align back
+    macd_out: List[float] = [None] * (slow - 1)  # type: ignore
+    signal_out: List[float] = [None] * (slow - 1)  # type: ignore
+    hist_out: List[float] = [None] * (slow - 1)  # type: ignore
+    for i, s_val in enumerate(signal_part):
+        m_val = macd_line_full[slow - 1 + i]
+        macd_out.append(round(m_val, 4))
+        signal_out.append(round(s_val, 4))
+        hist_out.append(round(m_val - s_val, 4))
+    return macd_out, signal_out, hist_out
+
+
+def compute_bollinger_series(closes: List[float], period: int = 20, std_mult: float = 2.0):
+    """计算布林带完整序列 → (upper, middle, lower)"""
+    upper: List[float] = [None] * (period - 1)  # type: ignore
+    middle: List[float] = [None] * (period - 1)  # type: ignore
+    lower: List[float] = [None] * (period - 1)  # type: ignore
+    for i in range(period - 1, len(closes)):
+        window = closes[i - period + 1: i + 1]
+        m = sum(window) / period
+        var = sum((x - m) ** 2 for x in window) / period
+        std = var ** 0.5
+        middle.append(round(m, 2))
+        upper.append(round(m + std_mult * std, 2))
+        lower.append(round(m - std_mult * std, 2))
+    return upper, middle, lower
+
+
 def compute_all_indicators(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
     """计算所有技术指标"""
     if not candles or len(candles) < 5:

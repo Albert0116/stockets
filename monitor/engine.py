@@ -130,19 +130,39 @@ class MonitorEngine:
         }
 
     async def _fetch_cn_quote(self, symbol: str) -> Dict[str, Any]:
-        """获取A股行情"""
-        import akshare as ak
-        df = await asyncio.to_thread(ak.stock_zh_a_spot_em)
-        row = df[df["代码"] == symbol]
-        if row.empty:
-            return {}
-        r = row.iloc[0]
-        return {
-            "price": float(r.get("最新价", 0)),
-            "change_pct": float(r.get("涨跌幅", 0)),
-            "volume": float(r.get("成交量", 0)),
-            "avg_volume": 0,
-        }
+        """获取A股行情 - 新浪实时接口，单只获取"""
+        import requests
+        # 新浪格式: sh600519 / sz000001
+        if symbol.startswith("6") or symbol.startswith("5") or symbol.startswith("9"):
+            sina_sym = f"sh{symbol}"
+        else:
+            sina_sym = f"sz{symbol}"
+
+        def _fetch():
+            url = f"https://hq.sinajs.cn/list={sina_sym}"
+            resp = requests.get(url, headers={"Referer": "https://finance.sina.com.cn"},
+                                timeout=5, proxies={"http": None, "https": None})
+            resp.encoding = "gbk"
+            text = resp.text
+            if '=""' in text or not text.strip():
+                return {}
+            # 解析: var hq_str_sh600519="贵州茅台,开盘价,...";
+            data_str = text.split('"')[1] if '"' in text else ""
+            if not data_str:
+                return {}
+            parts = data_str.split(",")
+            if len(parts) < 32:
+                return {}
+            return {
+                "price": float(parts[3]) if parts[3] else 0,     # 当前价
+                "change_pct": float(parts[32]) if len(parts) > 32 and parts[32] else
+                    (round((float(parts[3]) - float(parts[2])) / float(parts[2]) * 100, 2)
+                     if parts[3] and parts[2] and float(parts[2]) > 0 else 0),
+                "volume": float(parts[8]) if len(parts) > 8 and parts[8] else 0,
+                "avg_volume": 0,
+            }
+
+        return await asyncio.to_thread(_fetch)
 
     def _in_cooldown(self, rule_id: int) -> bool:
         """检查是否在冷却期内"""
